@@ -135,7 +135,7 @@ def federated_training_process(num_rounds, local_datasets, global_model, lambda1
             updates = torch.stack([local_updates[i][key].float() for i in range(num_nodes)], dim=0)
             average_update = updates.mean(dim=0)
             global_momentum[key] = momentum * global_momentum[key] + (1 - momentum) * average_update
-            global_model_dict[key] += global_momentum[key]
+            global_model_dict[key] = global_model_dict[key].float() + global_momentum[key]  # Ensure addition of float tensors
         
         global_model.load_state_dict(global_model_dict)
         
@@ -172,5 +172,5 @@ lambda1, lambda2, lambda3 = 1.0, 1.0, 0.1
 
 trained_global_model = federated_training_process(num_rounds=10, local_datasets=local_datasets, global_model=global_model, lambda1=lambda1, lambda2=lambda2, lambda3=lambda3, apply_privacy=True)
 
-# Display trained global model's parameters
+# Display trained global model's parametersa
 trained_global_model.state_dict()
