@@ -192,7 +192,34 @@ num_nodes = len(local_datasets)
 ```
 ```python
 def few_shot_training(global_model, data, num_rounds, n_way, k_shot, q_query):
-    # Implementation here
+    optimizer = torch.optim.Adam(global_model.parameters(), lr=0.001)
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    for round in range(num_rounds):
+        global_model.train()
+        optimizer.zero_grad()
+
+        support_set, query_set, labels = create_few_shot_batches(data, n_way, k_shot, q_query)
+        support_features = global_model.feature(support_set)
+        query_features = global_model.feature(query_set)
+
+        prototypes = support_features.view(n_way, k_shot, -1).mean(dim=1)
+
+        dists = torch.cdist(query_features, prototypes)
+        logits = -dists
+
+        # Reshape logits to match the label dimensions
+        logits = logits.view(-1, n_way)
+        labels = labels.repeat_interleave(q_query) # Adjust labels for each query sample
+
+        loss = loss_fn(logits, labels)
+        loss.backward()
+        optimizer.step()
+
+        print(f'Round {round + 1}/{num_rounds}, Loss: {loss.item()}')
+
+    return global_model
+
 ```
 
 ## Example
