@@ -51,25 +51,25 @@ class AttentionLayer(nn.Module):
 
 def calculate_embedding_loss(predicted_scores, ground_truth_labels):
     # Apply softmax to get probabilities from predicted scores
-    predicted_probabilities = F.softmax(predicted_scores, dim=1)  
+    predicted_probabilities = F.softmax(predicted_scores, dim=1)
 
     # Convert ground truth labels to one-hot encoding if they aren't already
     if ground_truth_labels.dim() == 2:  # Check if already one-hot encoded
-        num_classes = predicted_probabilities.size(1) 
+        num_classes = predicted_probabilities.size(1)
         ground_truth_labels = F.one_hot(ground_truth_labels.argmax(dim=1), num_classes=num_classes).float()
 
     # Calculate the dot product between predicted probabilities and ground truth labels
-    loss = -torch.mean(torch.sum(ground_truth_labels * predicted_probabilities, dim=1)) 
-    return loss   
+    loss = -torch.mean(torch.sum(ground_truth_labels * predicted_probabilities, dim=1))
+    return loss
 
 def calculate_learnable_loss(local_prototypes, local_queries, ground_truth_labels):
     distances = torch.cdist(local_queries, local_prototypes, p=2)  # Compute L2 distances
     exp_distances = torch.exp(-distances)
     probabilities = exp_distances / exp_distances.sum(dim=1, keepdim=True)
-    
+
     ground_truth_labels = ground_truth_labels.argmax(dim=1)  # Convert one-hot to class indices
     ground_truth_labels = F.one_hot(ground_truth_labels, num_classes=probabilities.size(1)).float()
-    
+
     loss = -torch.mean(torch.sum(ground_truth_labels * torch.log(probabilities + 1e-10), dim=1))
     return loss
 
@@ -130,7 +130,7 @@ def federated_training_process(num_rounds, local_datasets, global_model, lambda1
             for epoch in range(5):
                 optimizer.zero_grad()
                 features = local_model.feature(X_i)
-                
+
                 attention_layer = AttentionLayer(features.size(1)).to(features.device)
                 attended_features = attention_layer(features)
 
@@ -161,7 +161,7 @@ def federated_training_process(num_rounds, local_datasets, global_model, lambda1
             global_model_dict[key] = global_model_dict[key].float() + global_momentum[key]
 
         global_model.load_state_dict(global_model_dict)
-        
+
         for i in range(num_nodes):
             local_datasets[i][0].model = copy.deepcopy(global_model)
 
@@ -348,7 +348,7 @@ def create_few_shot_batches(data, n_way, k_shot, q_query):
 def few_shot_training(global_model, data, num_rounds, n_way, k_shot, q_query):
     optimizer = torch.optim.Adam(global_model.parameters(), lr=0.001)
     loss_fn = torch.nn.CrossEntropyLoss()
-    
+
     for round in range(num_rounds):
         global_model.train()
         optimizer.zero_grad()
@@ -361,6 +361,10 @@ def few_shot_training(global_model, data, num_rounds, n_way, k_shot, q_query):
 
         dists = torch.cdist(query_features, prototypes)
         logits = -dists
+
+        # Reshape logits to match the label dimensions
+        logits = logits.view(-1, n_way)
+        labels = labels.repeat_interleave(q_query) # Adjust labels for each query sample
 
         loss = loss_fn(logits, labels)
         loss.backward()
