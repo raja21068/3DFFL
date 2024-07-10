@@ -181,10 +181,63 @@ def load_data():
     C = 10
     return [(torch.rand(N, P, D), torch.randint(0, 2, (N, C)).float()) for _ in range(5)]
 
+def create_few_shot_batches(data, n_way, k_shot, q_query):
+    support_set = []
+    query_set = []
+    labels = []
+
+    for i in range(n_way):
+        class_samples = data[i]
+        support_samples = class_samples[:k_shot]
+        query_samples = class_samples[k_shot:k_shot + q_query]
+
+        support_set.append(support_samples)
+        query_set.append(query_samples)
+        labels.append(i)
+
+    support_set = torch.cat(support_set, 0)
+    query_set = torch.cat(query_set, 0)
+    labels = torch.tensor(labels)
+
+    return support_set, query_set, labels
+
+def few_shot_training(global_model, data, num_rounds, n_way, k_shot, q_query):
+    optimizer = torch.optim.Adam(global_model.parameters(), lr=0.001)
+    loss_fn = torch.nn.CrossEntropyLoss()
+    
+    for round in range(num_rounds):
+        global_model.train()
+        optimizer.zero_grad()
+
+        support_set, query_set, labels = create_few_shot_batches(data, n_way, k_shot, q_query)
+        support_features = global_model.pointnetpp(support_set)
+        query_features = global_model.pointnetpp(query_set)
+
+        prototypes = support_features.view(n_way, k_shot, -1).mean(dim=1)
+
+        dists = torch.cdist(query_features, prototypes)
+        logits = -dists
+
+        loss = loss_fn(logits, labels)
+        loss.backward()
+        optimizer.step()
+
+        print(f'Round {round + 1}/{num_rounds}, Loss: {loss.item()}')
+
+    return global_model
+
+# Main execution
 local_datasets = load_data()
 global_model = GlobalModel(input_dim=3, feature_dim=128, num_classes=10).to('cuda' if torch.cuda.is_available() else 'cpu')
 lambda1, lambda2, lambda3 = 1.0, 1.0, 0.1
 
+# Federated training
 trained_global_model = federated_training_process(num_rounds=50, local_datasets=local_datasets, global_model=global_model, lambda1=lambda1, lambda2=lambda2, lambda3=lambda3, apply_privacy=True)
 
-trained_global_model.state_dict()
+# Few-shot learning
+n_way, k_shot, q_query = 5, 5, 15
+few_shot_data = [torch.rand((100, 3, 1024)) for _ in range(n_way)]  # Example few-shot data
+trained_few_shot_model = few_shot_training(trained_global_model, few_shot_data, num_rounds=10, n_way=n_way, k_shot=k_shot, q_query=q_query)
+
+# Save the trained model state
+torch.save(trained_few_shot_model.state_dict(), 'few_shot_trained_model.pth')
