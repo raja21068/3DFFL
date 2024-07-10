@@ -99,7 +99,19 @@ class PointNetPP(nn.Module):
 The `AttentionLayer` class implements an attention mechanism:
 ```python
 class AttentionLayer(nn.Module):
-    # Initialization and forward methods here
+    def __init__(self, feature_dim):
+        super(AttentionLayer, self).__init__()
+        self.attention = nn.Sequential(
+            nn.Linear(feature_dim, feature_dim),
+            nn.ReLU(),
+            nn.Linear(feature_dim, 1),
+            nn.Softmax(dim=1)
+        )
+
+    def forward(self, x):
+        attention_weights = self.attention(x)
+        x = x * attention_weights
+        return x
 ```
 
 ### Loss Functions
@@ -127,15 +139,7 @@ The following functions handle data augmentation using Mixup:
 The `federated_training_process` function performs federated training:
 ```python
 def federated_training_process(num_rounds, local_datasets, global_model, lambda1, lambda2, lambda3, apply_privacy=False):
-    # Implementation here
-```
-
-### Few-Shot Learning
-The `ProtoNet` class and `few_shot_training` function implement few-shot learning using Prototypical Networks:
-```python
-class ProtoNet(MetaTemplate):
-    # Initialization and methods here
-num_nodes = len(local_datasets)
+        num_nodes = len(local_datasets)
     momentum = 0.9
     global_momentum = {key: torch.zeros_like(value).float() for key, value in global_model.state_dict().items()}
     previous_loss = float('inf')
@@ -189,6 +193,35 @@ num_nodes = len(local_datasets)
             local_datasets[i][0].model = copy.deepcopy(global_model)
 
     return global_model
+```
+
+### Few-Shot Learning
+The `ProtoNet` class and `few_shot_training` function implement few-shot learning using Prototypical Networks:
+```python
+def __init__(self, model_func, n_way, n_support):
+        super(ProtoNet, self).__init__(model_func, n_way, n_support)
+
+    def set_forward(self, x, is_feature=False):
+        z_support, z_query = self.parse_feature(x, is_feature)
+        z_proto = z_support.contiguous().view(self.n_way, self.n_support, -1).mean(1)
+        z_query = z_query.contiguous().view(self.n_way * self.n_query, -1)
+        dists = euclidean_dist(z_query, z_proto)
+        scores = -dists
+        return scores
+
+    def set_forward_loss(self, x):
+        y_query = torch.from_numpy(np.repeat(range(self.n_way), self.n_query))
+        y_query = Variable(y_query.cuda())
+        scores = self.set_forward(x)
+        return F.cross_entropy(scores, y_query)
+
+def euclidean_dist(x, y):
+    n = x.size(0)
+    m = y.size(0)
+    d = x.size(1)
+    x = x.unsqueeze(1).expand(n, m, d)
+    y = y.unsqueeze(0).expand(n, m, d)
+    return torch.pow(x - y, 2).sum(2)
 ```
 ```python
 def few_shot_training(global_model, data, num_rounds, n_way, k_shot, q_query):
